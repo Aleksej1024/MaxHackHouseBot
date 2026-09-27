@@ -5,8 +5,8 @@
 GOLANGCI_LINT ?= go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 
 COMPOSE      := docker compose
-COMPOSE_PROD := docker compose -f docker-compose.yml -f docker-compose.prod.yml
-WEBHOOK_CERTS_DIR ?= ./deploy/certs
+COMPOSE_PROD := docker compose -f docker-compose.prod.yml
+WEBHOOK_CERTS_DIR ?= /opt/certs_dir
 
 # Переменные из .env нужны локальному запуску и миграциям.
 ENV_FILE ?= .env

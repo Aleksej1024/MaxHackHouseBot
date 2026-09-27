@@ -1,67 +1,98 @@
-# Prod-override:
-#   make prod-up   (= docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build)
-# Логи в файл на volume, политика перезапуска, health-check на /readyz,
-# порты Postgres и Redis наружу не открываются. DB_PASSWORD в .env обязателен.
-#
-# Обновления MAX приходят через webhook (раздел 11):
-#
-#   MAX ──HTTPS :443──▶ nginx (сертификат, проверка секрета) ──HTTP──▶ bot:8080/webhook
-#
-# nginx завершает TLS сертификатом из WEBHOOK_CERTS_DIR (fullchain.pem и
-# privkey.pem, по умолчанию deploy/certs/) и пропускает только POST /webhook
-# с верным заголовком секрета. Бот наружу не публикуется: /healthz и /readyz —
-# только с сервера, на 127.0.0.1:BOT_HTTP_PORT.
-# В .env обязательны WEBHOOK_DOMAIN и WEBHOOK_SECRET; UPDATES_MODE и
-# WEBHOOK_URL задаются здесь из WEBHOOK_DOMAIN.
-
+name: maxhouse
 services:
   bot:
-    environment:
-      APP_ENV: prod
-      LOG_FILE_PATH: /var/log/bot/bot.log
-      UPDATES_MODE: webhook
-      WEBHOOK_URL: https://${WEBHOOK_DOMAIN:?задайте WEBHOOK_DOMAIN в .env}/webhook
-      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?задайте WEBHOOK_SECRET в .env}
-    ports: !override
+    build: .
+    # Переменные бота. По умолчанию .env в каталоге проекта; другой файл —
+    # BOT_ENV_FILE=/path/to/file.
+    env_file:
+      - path: ${BOT_ENV_FILE:-.env}
+        required: false
+    ports:
       - "127.0.0.1:${BOT_HTTP_PORT:-8080}:8080"
     volumes:
       - botlogs:/var/log/bot
+    stop_grace_period: ${BOT_STOP_GRACE_PERIOD:-30s}
     restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/readyz"]
+      # /readyz: процесс жив и Postgres с Redis доступны.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 30s
+      start_interval: 5s
+
+  migrate:
+    image: migrate/migrate:v4.18.3
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=pgx5://${DB_USER:-bot}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-bot}?sslmode=disable
+      - up
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-bot}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-bot}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+      start_interval: 2s
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+      start_interval: 2s
 
   nginx:
     image: nginx:1.27-alpine
     ports:
       - "443:443"
     environment:
-      # Подставляются в шаблон конфига при старте (envsubst образа nginx).
-      WEBHOOK_DOMAIN: ${WEBHOOK_DOMAIN}
-      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+      WEBHOOK_DOMAIN: ${WEBHOOK_DOMAIN:?задайте WEBHOOK_DOMAIN в .env}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?задайте WEBHOOK_SECRET в .env}
     volumes:
       - ./deploy/nginx/webhook.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ${WEBHOOK_CERTS_DIR:-./deploy/certs}:/etc/nginx/certs:ro
-    # Без depends_on: nginx должен слушать 443 до того, как бот при старте
-    # создаст подписку; адрес бота он находит при каждом запросе.
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 443"]
+      test: ["CMD", "curl", "-sk", "-o", "/dev/null", "--max-time", "4", "https://127.0.0.1/"]
       interval: 30s
       timeout: 5s
       retries: 3
-
-  postgres:
-    environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?задайте DB_PASSWORD в .env}
-    ports: !reset []
-    restart: unless-stopped
-
-  redis:
-    ports: !reset []
-    restart: unless-stopped
+      start_period: 10s
+      start_interval: 2s
 
 volumes:
+  pgdata:
+  redisdata:
   botlogs:
