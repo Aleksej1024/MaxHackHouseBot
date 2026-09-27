@@ -1,5 +1,5 @@
 # Бот домовых чатов для MAX
-
+&middot; [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Aleksej1024/MaxHackHouseBot/blob/main/LICENSE.md)
 
 ## Содержание
 
@@ -497,4 +497,3 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<домен>/webhook   
 | После замены сертификата | `docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx` |
 
 Подписку на webhook бот создаёт сам при каждом старте. При остановке она не снимается: пока бот лежит, MAX повторяет доставку каждые 30–60 секунд до 8 часов, и после запуска обновления придут.
-# MaxHackHouseBot
