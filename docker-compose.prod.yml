@@ -7,8 +7,6 @@ services:
     env_file:
       - path: ${BOT_ENV_FILE:-.env}
         required: false
-    ports:
-      - "127.0.0.1:${BOT_HTTP_PORT:-8080}:8080"
     volumes:
       - botlogs:/var/log/bot
     stop_grace_period: ${BOT_STOP_GRACE_PERIOD:-30s}
@@ -78,8 +76,8 @@ services:
     ports:
       - "443:443"
     environment:
-      WEBHOOK_DOMAIN: ${WEBHOOK_DOMAIN:?задайте WEBHOOK_DOMAIN в .env}
-      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?задайте WEBHOOK_SECRET в .env}
+      WEBHOOK_DOMAIN: ${WEBHOOK_DOMAIN}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
     volumes:
       - ./deploy/nginx/webhook.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ${WEBHOOK_CERTS_DIR:-./deploy/certs}:/etc/nginx/certs:ro
