@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS problem_report_users;
+DROP TABLE IF EXISTS problem_reports;
+DROP TABLE IF EXISTS broadcasts;
+DROP TABLE IF EXISTS scheduler_runs;
+DROP TABLE IF EXISTS rating_events;
+DROP TABLE IF EXISTS votes;
+DROP TABLE IF EXISTS attachments;
+DROP TABLE IF EXISTS comments;
+DROP TABLE IF EXISTS requests;
+DROP TABLE IF EXISTS memberships;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS house_chats;

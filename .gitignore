@@ -1,0 +1,20 @@
+# Секреты и локальное окружение
+.env
+.env.*
+!.env.example
+# Сертификат и ключ для nginx в prod (docker-compose.prod.yml)
+deploy/certs/
+
+# Склонированная для изучения библиотека MAX API (не входит в сборку)
+docs/max-bot-api-client-go/
+
+# Сборка
+/bin/
+/bot
+*.test
+coverage.out
+
+# IDE и ОС
+.idea/
+.vscode/
+.DS_Store

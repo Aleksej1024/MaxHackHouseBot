@@ -1,0 +1,15 @@
+# В образ попадает только то, что нужно для сборки бинарника и миграции.
+.env
+.env.*
+!.env.example
+.git
+.idea
+.vscode
+bin/
+docs/
+deploy/
+scripts/
+*.md
+*.test
+coverage.out
+docker-compose*.yml

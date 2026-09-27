@@ -1,0 +1,46 @@
+# nginx перед ботом в prod (docker-compose.prod.yml): HTTPS от MAX → bot:8080.
+# Домен и секрет (переменные WEBHOOK_DOMAIN и WEBHOOK_SECRET) подставляет
+# образ nginx при старте; переменные самого nginx envsubst не трогает.
+
+server_tokens off;
+
+server {
+    listen 443 ssl default_server;
+    server_name ${WEBHOOK_DOMAIN};
+
+    # fullchain.pem: сертификат домена, затем промежуточные сертификаты УЦ.
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+
+    # Адрес бота — через DNS Docker при каждом запросе: nginx стартует и
+    # работает, даже пока контейнер бота создаётся или перезапускается (502).
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $bot_upstream http://bot:8080;
+
+    # Только POST /webhook от MAX: запрос без верного секрета отсекается
+    # здесь, бот проверяет секрет ещё раз.
+    location = /webhook {
+        limit_except POST { deny all; }
+        if ($http_x_max_bot_api_secret != "${WEBHOOK_SECRET}") {
+            return 401;
+        }
+        client_max_body_size 1m;
+
+        proxy_pass $bot_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        # Бот отвечает сразу, обработка идёт после ответа.
+        proxy_connect_timeout 5s;
+        proxy_read_timeout    15s;
+    }
+
+    # /healthz, /readyz и всё остальное снаружи не видны.
+    location / {
+        return 404;
+    }
+}

@@ -1,0 +1,67 @@
+# Prod-override:
+#   make prod-up   (= docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build)
+# Логи в файл на volume, политика перезапуска, health-check на /readyz,
+# порты Postgres и Redis наружу не открываются. DB_PASSWORD в .env обязателен.
+#
+# Обновления MAX приходят через webhook (раздел 11):
+#
+#   MAX ──HTTPS :443──▶ nginx (сертификат, проверка секрета) ──HTTP──▶ bot:8080/webhook
+#
+# nginx завершает TLS сертификатом из WEBHOOK_CERTS_DIR (fullchain.pem и
+# privkey.pem, по умолчанию deploy/certs/) и пропускает только POST /webhook
+# с верным заголовком секрета. Бот наружу не публикуется: /healthz и /readyz —
+# только с сервера, на 127.0.0.1:BOT_HTTP_PORT.
+# В .env обязательны WEBHOOK_DOMAIN и WEBHOOK_SECRET; UPDATES_MODE и
+# WEBHOOK_URL задаются здесь из WEBHOOK_DOMAIN.
+
+services:
+  bot:
+    environment:
+      APP_ENV: prod
+      LOG_FILE_PATH: /var/log/bot/bot.log
+      UPDATES_MODE: webhook
+      WEBHOOK_URL: https://${WEBHOOK_DOMAIN:?задайте WEBHOOK_DOMAIN в .env}/webhook
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?задайте WEBHOOK_SECRET в .env}
+    ports: !override
+      - "127.0.0.1:${BOT_HTTP_PORT:-8080}:8080"
+    volumes:
+      - botlogs:/var/log/bot
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/readyz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "443:443"
+    environment:
+      # Подставляются в шаблон конфига при старте (envsubst образа nginx).
+      WEBHOOK_DOMAIN: ${WEBHOOK_DOMAIN}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+    volumes:
+      - ./deploy/nginx/webhook.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${WEBHOOK_CERTS_DIR:-./deploy/certs}:/etc/nginx/certs:ro
+    # Без depends_on: nginx должен слушать 443 до того, как бот при старте
+    # создаст подписку; адрес бота он находит при каждом запросе.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 443"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?задайте DB_PASSWORD в .env}
+    ports: !reset []
+    restart: unless-stopped
+
+  redis:
+    ports: !reset []
+    restart: unless-stopped
+
+volumes:
+  botlogs:

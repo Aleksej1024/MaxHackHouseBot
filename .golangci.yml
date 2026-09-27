@@ -1,0 +1,42 @@
+version: "2"
+
+run:
+  # Интеграционные тесты тоже проверяются.
+  build-tags:
+    - integration
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose       # незакрытые тела HTTP-ответов
+    - copyloopvar
+    - errorlint       # сравнение ошибок через errors.Is/As
+    - gocritic
+    - misspell
+    - nilerr          # возврат nil вместо проверенной ошибки
+    - noctx           # HTTP-запросы без контекста
+    - nolintlint
+    - rowserrcheck    # rows.Err() после обхода pgx.Rows
+    - sqlclosecheck
+    - testifylint
+    - unconvert
+    - usestdlibvars
+    - wastedassign
+  settings:
+    gocritic:
+      disabled-checks:
+        - ifElseChain # цепочки if/else в роутере читаются лучше switch
+    misspell:
+      locale: US
+  exclusions:
+    presets:
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - maxhouse

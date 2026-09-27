@@ -1,0 +1,82 @@
+name: maxhouse
+
+# Dev-окружение: bot + postgres + redis + миграции.
+#
+#   make up         — всё в Docker (бот тоже)
+#   make local      — только Postgres и Redis в Docker, бот на хосте (go run)
+#
+# Логин и пароль Postgres берутся из .env (DB_USER, DB_PASSWORD, DB_NAME),
+# по умолчанию bot/bot/bot. В dev порты Postgres и Redis опубликованы на
+# localhost для локального запуска бота; в prod их закрывает
+# docker-compose.prod.yml.
+
+x-db-dsn: &db-dsn postgres://${DB_USER:-bot}:${DB_PASSWORD:-bot}@postgres:5432/${DB_NAME:-bot}?sslmode=disable
+
+services:
+  bot:
+    build: .
+    # Переменные бота. По умолчанию .env в каталоге проекта; другой файл —
+    # BOT_ENV_FILE=/path/to/file (например, несколько окружений на сервере).
+    env_file:
+      - path: ${BOT_ENV_FILE:-.env}
+        required: false
+    environment:
+      APP_ENV: dev
+      # Внутри сети compose адреса другие, чем в .env для локального запуска.
+      POSTGRES_DSN: *db-dsn
+      REDIS_ADDR: redis:6379
+      HTTP_ADDR: :8080
+    ports:
+      - "${BOT_HTTP_PORT:-8080}:8080"
+    # Сколько Docker ждёт после SIGTERM до SIGKILL. Должно быть больше
+    # SHUTDOWN_TIMEOUT, иначе бот не успеет доработать очередь.
+    stop_grace_period: ${BOT_STOP_GRACE_PERIOD:-30s}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  migrate:
+    image: migrate/migrate:v4.18.3
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=pgx5://${DB_USER:-bot}:${DB_PASSWORD:-bot}@postgres:5432/${DB_NAME:-bot}?sslmode=disable
+      - up
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-bot}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-bot}
+      POSTGRES_DB: ${DB_NAME:-bot}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
